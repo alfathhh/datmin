@@ -1,1 +1,1 @@
-# datmin
+# Data Mining and Knowledge Management
