@@ -1,0 +1,222 @@
+---
+title: "Tugas DMKM"
+author: "Muhammad Al Fatah"
+date: "11/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Library
+```{r}
+library(tidyverse)
+library(psych)
+library(caret)
+library(adabag)
+
+```
+## Import File
+```{r}
+# Import File
+setwd("C:/Users/alfat/Desktop/STIS/5/DMNK/New folder")
+data_echo<-read.csv("echo/echocardiogram.data", header = F)
+View(data_echo)
+```
+
+## Format Data
+```{r}
+#Format Data
+str(data_echo)
+```
+
+## Missing Value
+```{r}
+#Missing Value
+data_echo<-na_if(data_echo,"?")
+sapply(data_echo, function(x) sum(is.na(x)))
+```
+
+## Menghilangkan variabel yang tidak berpengaruh dan menghapus data ke-50
+```{r}
+#Menghilangkan variabel yang tidak berpengaruh
+data_echo<-data_echo[,-c(1,2,8, 10,11,12)]
+```
+
+## Fungsi modus
+```{r}
+#Fungsi modus
+my_mode <- function(x) {  # Create mode function 
+  unique_x <- unique(x)
+  mode <- unique_x[which.max(tabulate(match(x, unique_x)))]
+  mode
+}
+```
+
+## Mengubah format data menjadi numeric
+```{r}
+#Mengubah format data menjadi numeric
+
+data_echo$V3<-as.numeric(data_echo$V3)
+data_echo$V5<-as.numeric(data_echo$V5)
+data_echo$V6<-as.numeric(data_echo$V6)
+data_echo$V9<-as.numeric(data_echo$V9)
+data_echo$V7<-as.numeric(data_echo$V7)
+```
+
+## Mengatasi missing data dengan menggunakan modus
+```{r}
+#Mengatasi missing data dengan menggunakan modus
+data_echo$V4[is.na(data_echo$V4)] <- my_mode(data_echo$V4[!is.na(data_echo$V4)])
+```
+
+## Mengatasi missing data dengan menggunakan mean
+```{r}
+#Mengatasi missing data dengan menggunakan mean
+data_echo$V3[is.na(data_echo$V3)] <- mean(data_echo$V3, na.rm=TRUE)
+data_echo$V7[is.na(data_echo$V7)] <- mean(data_echo$V7, na.rm=TRUE)
+data_echo$V6[is.na(data_echo$V6)] <- mean(data_echo$V6, na.rm=TRUE)
+data_echo$V9[is.na(data_echo$V9)] <- mean(data_echo$V9, na.rm=TRUE)
+data_echo$V5[is.na(data_echo$V5)] <- mean(data_echo$V5, na.rm=TRUE)
+```
+
+## Mengubah format data menjadi factor
+```{r}
+#Mengubah format data menjadi factor
+data_echo1<- data_echo
+data_echo1$V4 <- recode(data_echo1$V4, '0'="No Fluid", '1'="Fluid")
+data_echo1$V13<- as.factor(data_echo1$V13)
+```
+
+## Mengubah format data menjadi factor (dengan label)
+```{r}
+#Mengubah format data menjadi factor (dengan label)
+data_echo1$V3 <- cut(data_echo1$V3, 
+                   breaks = 4, 
+                   include.lowest = TRUE)
+
+data_echo1$V5 <- cut(data_echo1$V5, 
+                    breaks = 4, 
+                    include.lowest = TRUE)
+data_echo1$V6 <- cut(data_echo1$V6, 
+                    breaks = 4, 
+                    include.lowest = TRUE)
+data_echo1$V7 <- cut(data_echo1$V7, 
+                    breaks = 4, 
+                    include.lowest = TRUE)
+data_echo1$V9 <- cut(data_echo1$V9, 
+                    breaks = 4, 
+                    include.lowest = TRUE)
+```
+
+## Melihat Korelasi antar Variabel
+
+```{r}
+pairs.panels(data_echo1)
+```
+
+
+## Cross Validation
+
+```{r}
+myControl <- trainControl(
+  method = 'cv',
+  number = 10,
+  verboseIter = T
+)
+```
+
+
+## Buat Model
+```{r}
+#Buat Model
+model<-V13~V3+V4+V5+V6+V7+V9
+summary(model)
+```
+
+## Model with cross validation
+### Naive Bayes
+```{r}
+nb_cv <- train(model, data=data_echo1,
+               method='naive_bayes',
+               trControl=myControl)
+print(nb_cv)
+train
+```
+
+```{r}
+confusionMatrix(predict(nb_cv, newdata=test_set) %>% as.factor(),test_set$V13 %>% as.factor())
+```
+
+
+
+
+## Model with Split Validation
+
+```{r}
+set.seed(1234) # angka random
+sampling <- sample(1:nrow(data_echo1), 0.7*nrow(data_echo1))
+training_set <- data_echo1[sampling,]
+test_set <- data_echo1[-sampling,]
+```
+
+
+
+
+
+### Regresi Logistik
+```{r}
+#Buat Model
+modellogreg<-glm(V13~., data=training_set, family = "binomial")
+summary(modellogreg)
+```
+
+## Membuat Prediksi
+
+```{r}
+prediksilogreg <- predict(modellogreg, test_set, type="response") #output berupa peluang
+prediksilogreg
+```
+## Menyaring prediksi   
+```{r}
+#Menyaring prediksi, lebih besar dari 0.05 dikategorikan 1 (Alive) selain itu dikategorikan 0 (Meninggoy/belum sampai 1 tahun)
+pred <- ifelse(prediksilogreg>0.5, 1, 0)
+pred
+```
+
+## Confusion Matrix
+```{r}
+#Confusion Matrix
+confusionMatrix(table(pred, test_set$V13))
+```
+
+```{r}
+# model adaboost, mfinal = 10 (jml iterasi)
+ada <- boosting(model, data=training_set, 
+                mfinal=10, control=rpart.control(maxdepth=1),
+                coeflearn='Breiman')
+```
+
+
+```{r}
+# prediksi dan evaluasi model
+pred_ada <- predict(ada, test_set)$class
+confusionMatrix(as.factor(pred_ada), test_set$V13)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
